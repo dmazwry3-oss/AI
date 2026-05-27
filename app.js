@@ -1,9 +1,11 @@
 /* =========================================================
- * LexAI - Multi-Model AI Web App
+ * Dmaz Alyxers — Multi-Model AI Web App
  * Powered by LexCode API (https://api.lexcode.biz.id)
  * ========================================================= */
 
 const API_BASE = "https://api.lexcode.biz.id";
+const UPLOAD_ENDPOINT = "/api/tools/upload/tmplink"; // accepts any file, returns public URL
+const AI_NAME = "Dmaz Alyxers";
 
 /* ---------- Models config ---------- */
 const MODELS = [
@@ -18,7 +20,6 @@ const MODELS = [
     textParam: "text",
     imageParam: "imgUrl",
     parseAnswer: (d) => {
-      // result can be a string or an object with .response
       if (!d || !d.result) return null;
       if (typeof d.result === "string") return d.result;
       if (typeof d.result.response === "string") return d.result.response;
@@ -73,14 +74,13 @@ const MODELS = [
       if (!d || d.success === false) return null;
       let r = d.result;
       if (typeof r === "string") {
-        // Sometimes wrapped in extra quotes
-        const trimmed = r.trim();
+        const t = r.trim();
         if (
-          trimmed.length >= 2 &&
-          ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-            (trimmed.startsWith("'") && trimmed.endsWith("'")))
+          t.length >= 2 &&
+          ((t.startsWith('"') && t.endsWith('"')) ||
+            (t.startsWith("'") && t.endsWith("'")))
         ) {
-          return trimmed.slice(1, -1);
+          return t.slice(1, -1);
         }
         return r;
       }
@@ -101,29 +101,37 @@ const MODELS = [
       if (!d || !d.result) return null;
       const r = d.result;
       if (typeof r === "string") return r;
-      if (typeof r.answer === "string")
+      if (typeof r.answer === "string") {
         return {
           text: r.answer,
           references: Array.isArray(r.references) ? r.references : [],
           related: Array.isArray(r.related) ? r.related : [],
         };
+      }
       return null;
     },
   },
 ];
 
+/* ---------- Persona prefix injected into every text prompt ----------
+ * Subtle: tells the model to identify as Dmaz Alyxers when asked, in
+ * the same language as the user. Most LexCode AI endpoints accept just
+ * `text` so this is the cleanest place to inject persona.
+ */
+const PERSONA_PREFIX = `[Identitas asisten: Kamu adalah ${AI_NAME}, asisten AI yang ramah, akurat, dan membantu. Jawab dalam bahasa pengguna. Jangan menyebut nama model lain seperti Gemini/Claude/GPT kecuali ditanya secara teknis.]\n\n`;
+
 /* ---------- State ---------- */
 const state = {
-  modelId: localStorage.getItem("lexai.model") || MODELS[0].id,
-  imageUrl: null,
-  messages: [],
+  modelId: localStorage.getItem("dmaz.model") || MODELS[0].id,
+  attachments: [], // { id, file, name, size, type, kind, status, url, textContent }
   pending: false,
+  abortCtrl: null,
 };
 
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
 
-/* ---------- Markdown setup ---------- */
+/* ---------- Markdown ---------- */
 if (window.marked) {
   marked.setOptions({
     breaks: true,
@@ -152,9 +160,7 @@ function escapeHtml(str) {
 function highlightCode(scope) {
   if (!window.hljs) return;
   scope.querySelectorAll("pre code").forEach((el) => {
-    try {
-      hljs.highlightElement(el);
-    } catch {}
+    try { hljs.highlightElement(el); } catch {}
   });
 }
 
@@ -164,15 +170,16 @@ function renderModelList() {
   list.innerHTML = "";
   MODELS.forEach((m) => {
     const item = document.createElement("button");
+    item.type = "button";
     item.className = "model-item" + (m.id === state.modelId ? " active" : "");
     item.dataset.id = m.id;
     item.innerHTML = `
       <span class="m-icon"><i class="${m.icon}"></i></span>
       <span class="m-text">
-        <span class="m-name">${m.name}</span>
-        <span class="m-desc">${m.desc}</span>
+        <span class="m-name">${escapeHtml(m.name)}</span>
+        <span class="m-desc">${escapeHtml(m.desc)}</span>
       </span>
-      <span class="m-tag">${m.tag}</span>
+      <span class="m-tag">${escapeHtml(m.tag)}</span>
     `;
     item.addEventListener("click", () => {
       setModel(m.id);
@@ -186,33 +193,34 @@ function setModel(id) {
   const m = MODELS.find((x) => x.id === id);
   if (!m) return;
   state.modelId = id;
-  localStorage.setItem("lexai.model", id);
+  localStorage.setItem("dmaz.model", id);
 
-  // Update topbar
   $("#currentModelName").textContent = m.name;
-  const badge = $("#currentModelBadge");
-  badge.textContent = m.tag;
+  $("#currentModelDesc").textContent = m.desc;
+  $("#currentModelBadge").textContent = m.tag;
 
-  // Update list selection
   $$(".model-item").forEach((el) =>
     el.classList.toggle("active", el.dataset.id === id)
   );
-
-  // Reset image if model is not multimodal
-  if (!m.multimodal && state.imageUrl) {
-    state.imageUrl = null;
-    updateImagePreview();
-  }
-  // Disable image button for non-multimodal
-  const imgBtn = $("#addImageBtn");
-  imgBtn.classList.toggle("disabled", !m.multimodal);
-  imgBtn.title = m.multimodal
-    ? "Tambahkan URL gambar (vision)"
-    : "Model ini tidak mendukung gambar";
 }
 
 function getCurrentModel() {
   return MODELS.find((m) => m.id === state.modelId) || MODELS[0];
+}
+
+/** Auto-pick a vision-capable model when an image is attached
+ * but the current model isn't multimodal. */
+function ensureMultimodalIfImage() {
+  const hasImage = state.attachments.some((a) => a.kind === "image");
+  if (!hasImage) return;
+  const m = getCurrentModel();
+  if (m.multimodal) return;
+  // Pick first multimodal model
+  const mm = MODELS.find((x) => x.multimodal);
+  if (mm) {
+    setModel(mm.id);
+    showToast(`Model dialihkan ke ${mm.name} untuk membaca gambar`, "success");
+  }
 }
 
 /* ---------- Chat rendering ---------- */
@@ -221,22 +229,37 @@ function ensureWelcomeHidden() {
   if (w) w.remove();
 }
 
-function appendUserMessage({ text, imageUrl }) {
+function attachmentBubbleHtml(att) {
+  if (att.kind === "image" && att.url) {
+    return `<div class="bubble-img"><img src="${escapeHtml(att.url)}" alt="${escapeHtml(att.name)}" /></div>`;
+  }
+  const icon = fileIconClass(att);
+  return `
+    <div class="bubble-att">
+      <span class="ai"><i class="${icon}"></i></span>
+      <div>
+        <div class="at-name">${escapeHtml(att.name)}</div>
+        <div class="at-meta">${escapeHtml(att.kind)} · ${formatSize(att.size)}</div>
+      </div>
+    </div>`;
+}
+
+function appendUserMessage({ text, attachments }) {
   ensureWelcomeHidden();
   const wrap = document.createElement("div");
   wrap.className = "message-wrap";
-  const imgHtml = imageUrl
-    ? `<div class="bubble-img"><img src="${escapeHtml(
-        imageUrl
-      )}" alt="Image attachment" onerror="this.parentElement.style.display='none'" /></div>`
+
+  const attHtml = (attachments && attachments.length)
+    ? `<div class="bubble-attachments">${attachments.map(attachmentBubbleHtml).join("")}</div>`
     : "";
+
   wrap.innerHTML = `
     <div class="message">
       <div class="avatar user"><i class="fa-solid fa-user"></i></div>
       <div class="bubble">
         <div class="bubble-head"><span class="bubble-name">Kamu</span></div>
-        <div class="bubble-content">${renderMarkdown(text)}</div>
-        ${imgHtml}
+        <div class="bubble-content">${renderMarkdown(text || "")}</div>
+        ${attHtml}
       </div>
     </div>
   `;
@@ -250,11 +273,11 @@ function appendBotPlaceholder(modelName) {
   wrap.dataset.role = "bot-pending";
   wrap.innerHTML = `
     <div class="message">
-      <div class="avatar bot"><i class="fa-solid fa-bolt"></i></div>
+      <div class="avatar bot">D</div>
       <div class="bubble">
         <div class="bubble-head">
-          <span class="bubble-name">${escapeHtml(modelName)}</span>
-          <span>sedang berpikir…</span>
+          <span class="bubble-name">${escapeHtml(AI_NAME)}</span>
+          <span>· via ${escapeHtml(modelName)} · sedang berpikir</span>
         </div>
         <div class="bubble-content">
           <div class="typing"><span></span><span></span><span></span></div>
@@ -272,14 +295,16 @@ function fillBotMessage(wrap, { modelName, text, references, related, error }) {
   const content = wrap.querySelector(".bubble-content");
 
   if (error) {
-    head.innerHTML = `<span class="bubble-name">${escapeHtml(modelName)}</span><span style="color:var(--danger)">terjadi kesalahan</span>`;
-    content.innerHTML = `<div class="error-bubble"><i class="fa-solid fa-triangle-exclamation"></i> ${escapeHtml(
-      error
-    )}</div>`;
+    head.innerHTML = `<span class="bubble-name">${escapeHtml(AI_NAME)}</span><span style="color:var(--danger)">· terjadi kesalahan</span>`;
+    content.innerHTML = `
+      <div class="error-bubble">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>${escapeHtml(error)}</span>
+      </div>`;
     return;
   }
 
-  head.innerHTML = `<span class="bubble-name">${escapeHtml(modelName)}</span>`;
+  head.innerHTML = `<span class="bubble-name">${escapeHtml(AI_NAME)}</span><span>· via ${escapeHtml(modelName)}</span>`;
 
   let html = renderMarkdown(text || "");
 
@@ -308,9 +333,7 @@ function fillBotMessage(wrap, { modelName, text, references, related, error }) {
         ${related
           .map(
             (q) =>
-              `<button class="related-chip" data-q="${escapeHtml(
-                q
-              )}">${escapeHtml(q)}</button>`
+              `<button type="button" class="related-chip" data-q="${escapeHtml(q)}">${escapeHtml(q)}</button>`
           )
           .join("")}
       </div>
@@ -320,22 +343,21 @@ function fillBotMessage(wrap, { modelName, text, references, related, error }) {
   content.innerHTML = html;
   highlightCode(content);
 
-  // Add actions: copy
+  // Add copy action
   const actions = document.createElement("div");
   actions.className = "bubble-actions";
   actions.innerHTML = `
-    <button class="action-btn" data-act="copy"><i class="fa-regular fa-copy"></i> Salin</button>
+    <button type="button" class="action-btn" data-act="copy"><i class="fa-regular fa-copy"></i> Salin</button>
   `;
   wrap.querySelector(".bubble").appendChild(actions);
 
   actions.querySelector('[data-act="copy"]').addEventListener("click", () => {
     navigator.clipboard
       .writeText(text || "")
-      .then(() => showToast("Tersalin"))
-      .catch(() => showToast("Gagal menyalin", true));
+      .then(() => showToast("Tersalin ke clipboard", "success"))
+      .catch(() => showToast("Gagal menyalin", "error"));
   });
 
-  // Related chips fill input
   content.querySelectorAll(".related-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
       const q = chip.dataset.q;
@@ -351,21 +373,242 @@ function scrollToBottom() {
   c.scrollTop = c.scrollHeight;
 }
 
+/* ---------- File handling ---------- */
+const TEXT_EXTS = [
+  "txt","md","markdown","csv","tsv","json","yaml","yml","xml","html","htm",
+  "css","scss","sass","less","js","mjs","cjs","ts","tsx","jsx","py","rb","go",
+  "rs","java","kt","swift","c","h","cpp","cc","hpp","cs","php","sh","bash",
+  "zsh","sql","ini","cfg","conf","toml","env","log","srt","vtt","gitignore","dockerfile"
+];
+const MAX_TEXT_BYTES = 200 * 1024; // 200 KB cap embedded into prompt
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB safe limit
+
+function fileExt(name) {
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
+}
+
+function classifyFile(file) {
+  if (file.type && file.type.startsWith("image/")) return "image";
+  const ext = fileExt(file.name);
+  if (file.type === "text/plain" || file.type === "text/markdown" ||
+      file.type === "application/json" || file.type === "text/csv" ||
+      file.type === "application/xml" || (file.type || "").startsWith("text/") ||
+      TEXT_EXTS.includes(ext)) return "text";
+  if (file.type === "application/pdf" || ext === "pdf") return "pdf";
+  return "file";
+}
+
+function fileIconClass(att) {
+  switch (att.kind) {
+    case "image": return "fa-regular fa-image";
+    case "text":  return "fa-solid fa-file-lines";
+    case "pdf":   return "fa-regular fa-file-pdf";
+    default:      return "fa-regular fa-file";
+  }
+}
+
+function formatSize(bytes) {
+  if (bytes == null) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error("Gagal membaca file"));
+    r.onload = () => resolve(r.result || "");
+    r.readAsText(file);
+  });
+}
+
+async function uploadFile(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(API_BASE + UPLOAD_ENDPOINT, { method: "POST", body: fd });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || data.success === false) {
+    const msg = (data && (data.message || data.error)) || `HTTP ${res.status}`;
+    throw new Error(typeof msg === "string" ? msg : "Upload gagal");
+  }
+  const url =
+    (data.result && (data.result.url || data.result.download_url)) ||
+    null;
+  if (!url) throw new Error("Upload sukses tapi URL tidak ditemukan");
+  return url;
+}
+
+async function addFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+
+  for (const file of files) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      showToast(`${file.name} terlalu besar (maks 25 MB)`, "error");
+      continue;
+    }
+    const id = "att_" + Math.random().toString(36).slice(2, 9);
+    const kind = classifyFile(file);
+    const att = {
+      id,
+      file,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      kind,
+      status: "pending",
+      url: null,
+      textContent: null,
+    };
+    state.attachments.push(att);
+    renderAttachments();
+
+    try {
+      if (kind === "text") {
+        // Read locally; only upload if oversized for embed (then keep URL).
+        let text = "";
+        try {
+          text = await readFileAsText(file);
+        } catch {
+          text = "";
+        }
+        if (text && new Blob([text]).size <= MAX_TEXT_BYTES) {
+          att.textContent = text;
+        } else {
+          att.textContent = text ? text.slice(0, 8000) + "\n\n…(dipotong)" : "";
+        }
+        // Also upload so a public URL is available (best-effort, non-blocking)
+        try {
+          att.status = "uploading";
+          renderAttachments();
+          att.url = await uploadFile(file);
+        } catch { /* ignore */ }
+        att.status = "done";
+      } else {
+        // image / pdf / others → upload to get public URL
+        att.status = "uploading";
+        renderAttachments();
+        att.url = await uploadFile(file);
+        att.status = "done";
+      }
+    } catch (err) {
+      att.status = "error";
+      att.error = err.message || "Gagal upload";
+      showToast(`Gagal upload ${att.name}: ${att.error}`, "error");
+    }
+    renderAttachments();
+  }
+
+  ensureMultimodalIfImage();
+}
+
+function removeAttachment(id) {
+  state.attachments = state.attachments.filter((a) => a.id !== id);
+  renderAttachments();
+}
+
+function renderAttachments() {
+  const bar = $("#attachments");
+  if (!state.attachments.length) {
+    bar.hidden = true;
+    bar.innerHTML = "";
+    return;
+  }
+  bar.hidden = false;
+  bar.innerHTML = state.attachments
+    .map((a) => {
+      const cls = "att-chip" +
+        (a.status === "uploading" ? " uploading" : "") +
+        (a.status === "error" ? " error" : "");
+      const thumb =
+        a.kind === "image" && a.url
+          ? `<span class="att-thumb"><img src="${escapeHtml(a.url)}" alt="" /></span>`
+          : a.kind === "image" && a.file
+          ? `<span class="att-thumb"><img src="${escapeHtml(URL.createObjectURL(a.file))}" alt="" /></span>`
+          : `<span class="att-thumb"><i class="${fileIconClass(a)}"></i></span>`;
+      const meta =
+        a.status === "uploading"
+          ? `<span class="spinner"></span> Mengunggah…`
+          : a.status === "error"
+          ? `Gagal upload`
+          : `${a.kind} · ${formatSize(a.size)}`;
+      return `
+        <div class="att-chip ${cls.replace("att-chip ", "")}" data-id="${a.id}">
+          ${thumb}
+          <div class="att-info">
+            <div class="att-name">${escapeHtml(a.name)}</div>
+            <div class="att-meta">${meta}</div>
+          </div>
+          <button type="button" class="att-remove" data-rm="${a.id}" title="Hapus" aria-label="Hapus">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>`;
+    })
+    .join("");
+
+  bar.querySelectorAll("[data-rm]").forEach((b) => {
+    b.addEventListener("click", () => removeAttachment(b.dataset.rm));
+  });
+}
+
+/* ---------- Build composite prompt with attachments ---------- */
+function buildPrompt(userText) {
+  const blocks = [];
+  const ready = state.attachments.filter((a) => a.status !== "uploading");
+  const textFiles = ready.filter((a) => a.kind === "text" && a.textContent);
+  const otherFiles = ready.filter(
+    (a) => a.kind !== "text" && a.kind !== "image" && a.url
+  );
+
+  if (textFiles.length) {
+    for (const a of textFiles) {
+      const lang = fileExt(a.name) || "";
+      blocks.push(
+        `Berikut isi file "${a.name}" (${formatSize(a.size)}):\n\`\`\`${lang}\n${a.textContent}\n\`\`\``
+      );
+    }
+  }
+
+  if (otherFiles.length) {
+    const list = otherFiles
+      .map((a) => `- ${a.name} (${a.kind}, ${formatSize(a.size)}): ${a.url}`)
+      .join("\n");
+    blocks.push(`File lampiran (URL publik):\n${list}`);
+  }
+
+  // Mention images (model multimodal akan menerima imgUrl, tapi kalau >1 image
+  // kita tetap menyebutkannya dalam prompt sehingga model sadar)
+  const images = ready.filter((a) => a.kind === "image" && a.url);
+  if (images.length > 1) {
+    const list = images.map((a, i) => `- Gambar ${i + 1}: ${a.url}`).join("\n");
+    blocks.push(`Beberapa gambar dilampirkan:\n${list}`);
+  }
+
+  const userPart = userText.trim()
+    ? `Pertanyaan/instruksi pengguna:\n${userText.trim()}`
+    : `Pengguna mengirim lampiran tanpa pesan. Tolong analisa & jelaskan isinya.`;
+
+  return PERSONA_PREFIX + [userPart, ...blocks].join("\n\n");
+}
+
 /* ---------- API ---------- */
-async function callApi(model, text, imageUrl) {
+async function callApi(model, text, primaryImageUrl, signal) {
   const url = new URL(API_BASE + model.endpoint);
   url.searchParams.set(model.textParam, text);
-  if (model.multimodal && imageUrl && model.imageParam) {
-    url.searchParams.set(model.imageParam, imageUrl);
+  if (model.multimodal && primaryImageUrl && model.imageParam) {
+    url.searchParams.set(model.imageParam, primaryImageUrl);
   }
 
   const res = await fetch(url.toString(), {
     method: "GET",
     headers: { Accept: "application/json" },
+    signal,
   });
 
-  let data = null;
   const raw = await res.text();
+  let data = null;
   try {
     data = JSON.parse(raw);
   } catch {
@@ -380,37 +623,54 @@ async function callApi(model, text, imageUrl) {
   }
 
   const parsed = model.parseAnswer(data);
-  if (parsed == null) {
-    throw new Error("Respons kosong atau tidak dikenali dari model.");
-  }
+  if (parsed == null) throw new Error("Respons kosong atau tidak dikenali dari model.");
   return parsed;
 }
 
 /* ---------- Send flow ---------- */
 async function sendMessage() {
   if (state.pending) return;
+
   const inputEl = $("#input");
-  const text = inputEl.value.trim();
-  if (!text) return;
+  const userText = inputEl.value.trim();
+  const hasAttachments = state.attachments.some((a) => a.status !== "error");
 
+  if (!userText && !hasAttachments) return;
+
+  // Wait if any attachment is still uploading
+  const uploading = state.attachments.some((a) => a.status === "uploading");
+  if (uploading) {
+    showToast("Tunggu sebentar, masih mengunggah file…", "error");
+    return;
+  }
+
+  ensureMultimodalIfImage();
   const model = getCurrentModel();
-  const imageUrl = model.multimodal ? state.imageUrl : null;
 
-  // Append user
-  appendUserMessage({ text, imageUrl });
+  // Snapshot attachments for this message
+  const attachmentsSnapshot = state.attachments.filter((a) => a.status !== "error");
+  const firstImage = attachmentsSnapshot.find((a) => a.kind === "image" && a.url);
+  const primaryImageUrl = model.multimodal && firstImage ? firstImage.url : null;
+
+  // Append user message bubble
+  appendUserMessage({
+    text: userText || "(lampiran tanpa pesan)",
+    attachments: attachmentsSnapshot,
+  });
+
   inputEl.value = "";
   autoGrow();
-  // Clear image after sending
-  state.imageUrl = null;
-  updateImagePreview();
+  state.attachments = [];
+  renderAttachments();
 
-  // Append placeholder
   const wrap = appendBotPlaceholder(model.name);
   state.pending = true;
-  setComposerEnabled(false);
+  state.abortCtrl = new AbortController();
+  setComposerBusy(true);
 
   try {
-    const result = await callApi(model, text, imageUrl);
+    const prompt = buildPrompt(userText);
+    const result = await callApi(model, prompt, primaryImageUrl, state.abortCtrl.signal);
     if (typeof result === "string") {
       fillBotMessage(wrap, { modelName: model.name, text: result });
     } else if (result && typeof result.text === "string") {
@@ -421,27 +681,40 @@ async function sendMessage() {
         related: result.related,
       });
     } else {
-      fillBotMessage(wrap, {
-        modelName: model.name,
-        text: String(result),
-      });
+      fillBotMessage(wrap, { modelName: model.name, text: String(result) });
     }
   } catch (err) {
-    fillBotMessage(wrap, {
-      modelName: model.name,
-      error: err.message || "Tidak dapat menghubungi server AI.",
-    });
+    if (err && err.name === "AbortError") {
+      fillBotMessage(wrap, {
+        modelName: model.name,
+        error: "Dihentikan oleh pengguna.",
+      });
+    } else {
+      fillBotMessage(wrap, {
+        modelName: model.name,
+        error: err.message || "Tidak dapat menghubungi server AI.",
+      });
+    }
   } finally {
     state.pending = false;
-    setComposerEnabled(true);
+    state.abortCtrl = null;
+    setComposerBusy(false);
     scrollToBottom();
     inputEl.focus();
   }
 }
 
-function setComposerEnabled(enabled) {
-  $("#sendBtn").disabled = !enabled;
-  $("#input").disabled = !enabled;
+function setComposerBusy(busy) {
+  $("#sendBtn").hidden = busy;
+  $("#stopBtn").hidden = !busy;
+  $("#input").disabled = busy;
+  $("#attachBtn").disabled = busy;
+}
+
+function stopGeneration() {
+  if (state.abortCtrl) {
+    try { state.abortCtrl.abort(); } catch {}
+  }
 }
 
 /* ---------- Composer ---------- */
@@ -451,95 +724,65 @@ function autoGrow() {
   ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
 }
 
-/* ---------- Image modal ---------- */
-function openImageModal() {
-  const model = getCurrentModel();
-  if (!model.multimodal) {
-    showToast("Model ini tidak mendukung gambar", true);
-    return;
-  }
-  $("#imageUrlInput").value = state.imageUrl || "";
-  $("#imageModal").hidden = false;
-  setTimeout(() => $("#imageUrlInput").focus(), 50);
-}
-
-function closeImageModal() {
-  $("#imageModal").hidden = true;
-}
-
-function applyImageUrl() {
-  const v = $("#imageUrlInput").value.trim();
-  if (!v) {
-    state.imageUrl = null;
-  } else {
-    try {
-      // Basic URL validation
-      const u = new URL(v);
-      if (!/^https?:$/.test(u.protocol)) throw 0;
-      state.imageUrl = v;
-    } catch {
-      showToast("URL tidak valid", true);
-      return;
-    }
-  }
-  updateImagePreview();
-  closeImageModal();
-}
-
-function updateImagePreview() {
-  const bar = $("#imagePreview");
-  const img = $("#imagePreviewImg");
-  const btn = $("#addImageBtn");
-  if (state.imageUrl) {
-    img.src = state.imageUrl;
-    bar.hidden = false;
-    btn.classList.add("has-image");
-  } else {
-    bar.hidden = true;
-    img.removeAttribute("src");
-    btn.classList.remove("has-image");
-  }
-}
-
 /* ---------- Toast ---------- */
 let toastTimer = null;
-function showToast(msg, isError = false) {
+function showToast(msg, type = "") {
   const t = $("#toast");
-  t.textContent = msg;
-  t.classList.toggle("error", !!isError);
+  t.textContent = "";
+  const icon = document.createElement("i");
+  icon.className =
+    type === "error" ? "fa-solid fa-circle-exclamation" :
+    type === "success" ? "fa-solid fa-circle-check" :
+    "fa-solid fa-circle-info";
+  const span = document.createElement("span");
+  span.textContent = msg;
+  t.appendChild(icon);
+  t.appendChild(span);
+  t.className = "toast" + (type ? " " + type : "");
   t.hidden = false;
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    t.hidden = true;
-  }, 2500);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 2800);
 }
 
 /* ---------- New chat ---------- */
 function newChat() {
-  state.messages = [];
-  state.imageUrl = null;
-  updateImagePreview();
+  if (state.pending) stopGeneration();
+  state.attachments = [];
+  renderAttachments();
   $("#chat").innerHTML = "";
-  // Re-render welcome
+
   const welcome = document.createElement("div");
   welcome.className = "welcome";
   welcome.id = "welcome";
   welcome.innerHTML = `
-    <div class="welcome-logo"><i class="fa-solid fa-bolt"></i></div>
-    <h1>Selamat datang di <span class="grad">LexAI</span></h1>
-    <p>Asisten AI gratis dengan banyak model. Pilih model di sidebar lalu mulai mengobrol.</p>
+    <div class="welcome-logo"><span>D</span></div>
+    <h1>Halo, saya <span class="grad">${escapeHtml(AI_NAME)}</span></h1>
+    <p>Asisten AI multi-model. Tanya apapun, kirim gambar, atau lampirkan file — saya bantu jawab.</p>
+
+    <div class="capabilities">
+      <div class="cap"><i class="fa-solid fa-comments"></i><span>Chat cerdas</span></div>
+      <div class="cap"><i class="fa-solid fa-image"></i><span>Analisa gambar</span></div>
+      <div class="cap"><i class="fa-solid fa-file-lines"></i><span>Baca file teks</span></div>
+      <div class="cap"><i class="fa-solid fa-globe"></i><span>Cari di web</span></div>
+      <div class="cap"><i class="fa-solid fa-code"></i><span>Bantu coding</span></div>
+    </div>
+
     <div class="prompt-suggestions">
       <button class="suggest" data-prompt="Jelaskan konsep machine learning dengan analogi sederhana">
-        <i class="fa-solid fa-lightbulb"></i><span>Jelaskan machine learning</span>
+        <i class="fa-solid fa-lightbulb"></i>
+        <div><div class="s-title">Jelaskan ML</div><div class="s-sub">dengan analogi sederhana</div></div>
       </button>
-      <button class="suggest" data-prompt="Tuliskan fungsi JavaScript untuk mengurutkan array bilangan secara ascending">
-        <i class="fa-solid fa-code"></i><span>Sort array di JavaScript</span>
+      <button class="suggest" data-prompt="Tuliskan fungsi JavaScript untuk mengurutkan array bilangan secara ascending dengan beberapa varian (bubble, quick, built-in).">
+        <i class="fa-solid fa-code"></i>
+        <div><div class="s-title">Sort di JavaScript</div><div class="s-sub">dengan beberapa varian</div></div>
       </button>
-      <button class="suggest" data-prompt="Buatkan rencana belajar Python untuk pemula selama 30 hari">
-        <i class="fa-solid fa-graduation-cap"></i><span>Rencana belajar Python</span>
+      <button class="suggest" data-prompt="Buatkan rencana belajar Python untuk pemula selama 30 hari, lengkap dengan target harian.">
+        <i class="fa-solid fa-graduation-cap"></i>
+        <div><div class="s-title">Belajar Python 30 hari</div><div class="s-sub">jadwal harian lengkap</div></div>
       </button>
-      <button class="suggest" data-prompt="Apa berita teknologi terbaru hari ini?">
-        <i class="fa-solid fa-newspaper"></i><span>Berita teknologi terbaru</span>
+      <button class="suggest" data-prompt="Apa berita teknologi terbaru hari ini? Sertakan sumber.">
+        <i class="fa-solid fa-newspaper"></i>
+        <div><div class="s-title">Berita teknologi</div><div class="s-sub">cari di web (Perplexity)</div></div>
       </button>
     </div>
   `;
@@ -567,6 +810,65 @@ function closeSidebarMobile() {
   $("#backdrop").classList.remove("show");
 }
 
+/* ---------- Drag & drop overlay ---------- */
+let dragDepth = 0;
+function setupDragDrop() {
+  const overlay = $("#dropOverlay");
+
+  // Stop browser from opening files dropped outside drop zones
+  ["dragenter", "dragover", "dragleave", "drop"].forEach((evt) => {
+    window.addEventListener(evt, (e) => {
+      if (evt === "dragover" || evt === "drop") e.preventDefault();
+    });
+  });
+
+  window.addEventListener("dragenter", (e) => {
+    if (!hasFiles(e.dataTransfer)) return;
+    dragDepth++;
+    overlay.hidden = false;
+  });
+  window.addEventListener("dragleave", () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) overlay.hidden = true;
+  });
+  window.addEventListener("drop", (e) => {
+    dragDepth = 0;
+    overlay.hidden = true;
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    addFiles(e.dataTransfer.files);
+  });
+}
+
+function hasFiles(dt) {
+  if (!dt) return false;
+  if (dt.types) {
+    for (const t of dt.types) {
+      if (t === "Files" || t === "application/x-moz-file") return true;
+    }
+  }
+  return false;
+}
+
+/* ---------- Paste image from clipboard ---------- */
+function setupPaste() {
+  window.addEventListener("paste", (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    const files = [];
+    for (const it of items) {
+      if (it.kind === "file") {
+        const f = it.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  });
+}
+
 /* ---------- Init ---------- */
 function init() {
   renderModelList();
@@ -590,29 +892,24 @@ function init() {
   $("#newChatBtn").addEventListener("click", newChat);
   $("#clearBtn").addEventListener("click", newChat);
 
-  // Image modal
-  $("#addImageBtn").addEventListener("click", openImageModal);
-  $("#imageModalClose").addEventListener("click", closeImageModal);
-  $("#imageCancelBtn").addEventListener("click", closeImageModal);
-  $("#imageOkBtn").addEventListener("click", applyImageUrl);
-  $("#imageUrlInput").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      applyImageUrl();
-    }
+  // Attach button + file input
+  $("#attachBtn").addEventListener("click", () => $("#fileInput").click());
+  $("#fileInput").addEventListener("change", (e) => {
+    addFiles(e.target.files);
+    e.target.value = ""; // reset so same file can be picked again
   });
-  $("#imageModal").addEventListener("click", (e) => {
-    if (e.target.id === "imageModal") closeImageModal();
-  });
-  $("#removeImageBtn").addEventListener("click", () => {
-    state.imageUrl = null;
-    updateImagePreview();
-  });
+
+  // Stop button
+  $("#stopBtn").addEventListener("click", stopGeneration);
 
   // Sidebar mobile
   $("#sidebarToggle").addEventListener("click", openSidebarMobile);
   $("#sidebarClose").addEventListener("click", closeSidebarMobile);
   $("#backdrop").addEventListener("click", closeSidebarMobile);
+
+  // Drag/drop + paste
+  setupDragDrop();
+  setupPaste();
 
   // Suggestions
   bindSuggestions();

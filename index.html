@@ -3,30 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0b0f1a" />
-  <meta name="description" content="LexAI - Web AI gratis dengan banyak model: Gemini, Claude, GPT-4o, Perplexity. Powered by LexCode API." />
-  <title>LexAI &middot; Multi-Model AI Chat</title>
+  <meta name="theme-color" content="#070914" />
+  <meta name="description" content="Dmaz Alyxers - Asisten AI gratis multi-model dengan dukungan upload file. Powered by LexCode API." />
+  <title>Dmaz Alyxers &middot; Asisten AI</title>
 
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop offset='0' stop-color='%237c5cff'/%3E%3Cstop offset='1' stop-color='%232ee6c1'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23g)'/%3E%3Ctext x='50' y='66' font-family='Inter,sans-serif' font-size='52' font-weight='800' text-anchor='middle' fill='white'%3ED%3C/text%3E%3C/svg%3E" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- Animated background -->
+  <div class="bg-fx" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="grid"></div>
+  </div>
+
   <div class="app">
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <div class="brand">
-          <span class="brand-icon"><i class="fa-solid fa-bolt"></i></span>
-          <div>
-            <div class="brand-name">LexAI</div>
-            <div class="brand-sub">Multi-Model AI</div>
+          <span class="brand-icon" aria-hidden="true">
+            <span class="brand-icon-letter">D</span>
+          </span>
+          <div class="brand-text">
+            <div class="brand-name">Dmaz Alyxers</div>
+            <div class="brand-sub">AI Assistant</div>
           </div>
         </div>
         <button class="icon-btn sidebar-close" id="sidebarClose" aria-label="Tutup sidebar">
@@ -40,14 +50,28 @@
       </button>
 
       <div class="sidebar-section">
-        <div class="section-title">Pilih Model</div>
+        <div class="section-title">
+          <i class="fa-solid fa-microchip"></i>
+          <span>Pilih Model</span>
+        </div>
         <div class="model-list" id="modelList"></div>
       </div>
 
       <div class="sidebar-footer">
+        <div class="info-card">
+          <div class="info-head">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Tips</span>
+          </div>
+          <div class="info-body">
+            Tarik & lepas file apapun ke jendela ini, atau klik
+            <i class="fa-solid fa-paperclip"></i> di kotak pesan.
+          </div>
+        </div>
         <a href="https://api.lexcode.biz.id/docs/" target="_blank" rel="noopener" class="footer-link">
           <i class="fa-solid fa-book"></i>
           <span>Dokumentasi API</span>
+          <i class="fa-solid fa-arrow-up-right-from-square small"></i>
         </a>
         <div class="credits">
           Powered by <a href="https://api.lexcode.biz.id" target="_blank" rel="noopener">LexCode API</a>
@@ -62,87 +86,107 @@
           <i class="fa-solid fa-bars"></i>
         </button>
         <div class="topbar-title">
-          <span id="currentModelName">Gemini 2.5 Flash</span>
-          <span class="model-badge" id="currentModelBadge">multimodal</span>
+          <div class="tt-name">
+            <span id="currentModelName">Gemini 2.5 Flash</span>
+            <span class="model-badge" id="currentModelBadge">vision</span>
+          </div>
+          <div class="tt-sub" id="currentModelDesc">Cepat, multimodal (Google)</div>
         </div>
-        <button class="icon-btn" id="clearBtn" title="Hapus chat" aria-label="Hapus chat">
-          <i class="fa-solid fa-trash"></i>
+        <button class="icon-btn ghost-danger" id="clearBtn" title="Hapus chat" aria-label="Hapus chat">
+          <i class="fa-solid fa-trash-can"></i>
         </button>
       </header>
 
       <section class="chat" id="chat">
         <div class="welcome" id="welcome">
-          <div class="welcome-logo"><i class="fa-solid fa-bolt"></i></div>
-          <h1>Selamat datang di <span class="grad">LexAI</span></h1>
-          <p>Asisten AI gratis dengan banyak model. Pilih model di sidebar lalu mulai mengobrol.</p>
+          <div class="welcome-logo">
+            <span>D</span>
+          </div>
+          <h1>Halo, saya <span class="grad">Dmaz Alyxers</span></h1>
+          <p>Asisten AI multi-model. Tanya apapun, kirim gambar, atau lampirkan file — saya bantu jawab.</p>
+
+          <div class="capabilities">
+            <div class="cap"><i class="fa-solid fa-comments"></i><span>Chat cerdas</span></div>
+            <div class="cap"><i class="fa-solid fa-image"></i><span>Analisa gambar</span></div>
+            <div class="cap"><i class="fa-solid fa-file-lines"></i><span>Baca file teks</span></div>
+            <div class="cap"><i class="fa-solid fa-globe"></i><span>Cari di web</span></div>
+            <div class="cap"><i class="fa-solid fa-code"></i><span>Bantu coding</span></div>
+          </div>
+
           <div class="prompt-suggestions" id="promptSuggestions">
             <button class="suggest" data-prompt="Jelaskan konsep machine learning dengan analogi sederhana">
               <i class="fa-solid fa-lightbulb"></i>
-              <span>Jelaskan machine learning</span>
+              <div>
+                <div class="s-title">Jelaskan ML</div>
+                <div class="s-sub">dengan analogi sederhana</div>
+              </div>
             </button>
-            <button class="suggest" data-prompt="Tuliskan fungsi JavaScript untuk mengurutkan array bilangan secara ascending">
+            <button class="suggest" data-prompt="Tuliskan fungsi JavaScript untuk mengurutkan array bilangan secara ascending dengan beberapa varian (bubble, quick, built-in).">
               <i class="fa-solid fa-code"></i>
-              <span>Sort array di JavaScript</span>
+              <div>
+                <div class="s-title">Sort di JavaScript</div>
+                <div class="s-sub">dengan beberapa varian</div>
+              </div>
             </button>
-            <button class="suggest" data-prompt="Buatkan rencana belajar Python untuk pemula selama 30 hari">
+            <button class="suggest" data-prompt="Buatkan rencana belajar Python untuk pemula selama 30 hari, lengkap dengan target harian.">
               <i class="fa-solid fa-graduation-cap"></i>
-              <span>Rencana belajar Python</span>
+              <div>
+                <div class="s-title">Belajar Python 30 hari</div>
+                <div class="s-sub">jadwal harian lengkap</div>
+              </div>
             </button>
-            <button class="suggest" data-prompt="Apa berita teknologi terbaru hari ini?">
+            <button class="suggest" data-prompt="Apa berita teknologi terbaru hari ini? Sertakan sumber.">
               <i class="fa-solid fa-newspaper"></i>
-              <span>Berita teknologi terbaru</span>
+              <div>
+                <div class="s-title">Berita teknologi</div>
+                <div class="s-sub">cari di web (Perplexity)</div>
+              </div>
             </button>
           </div>
         </div>
       </section>
 
-      <!-- Image preview when vision mode -->
-      <div class="image-preview" id="imagePreview" hidden>
-        <img id="imagePreviewImg" alt="Preview gambar" />
-        <button class="icon-btn" id="removeImageBtn" aria-label="Hapus gambar">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
+      <!-- Attachments preview row (above composer) -->
+      <div class="attachments" id="attachments" hidden></div>
 
       <form class="composer" id="composer" autocomplete="off">
-        <button type="button" class="icon-btn composer-btn" id="addImageBtn" title="Tambahkan URL gambar (vision)" aria-label="Tambah gambar">
-          <i class="fa-regular fa-image"></i>
-        </button>
-        <textarea
-          id="input"
-          rows="1"
-          placeholder="Tulis pesanmu di sini... (Shift+Enter untuk baris baru)"
-          aria-label="Pesan"
-        ></textarea>
-        <button type="submit" class="send-btn" id="sendBtn" aria-label="Kirim">
-          <i class="fa-solid fa-paper-plane"></i>
-        </button>
+        <div class="composer-inner">
+          <button type="button" class="composer-btn" id="attachBtn" title="Lampirkan file" aria-label="Lampirkan file">
+            <i class="fa-solid fa-paperclip"></i>
+          </button>
+          <input type="file" id="fileInput" hidden multiple />
+
+          <textarea
+            id="input"
+            rows="1"
+            placeholder="Tanyakan apapun pada Dmaz Alyxers..."
+            aria-label="Pesan"
+          ></textarea>
+
+          <button type="button" class="send-btn stop" id="stopBtn" hidden aria-label="Hentikan">
+            <i class="fa-solid fa-stop"></i>
+          </button>
+          <button type="submit" class="send-btn" id="sendBtn" aria-label="Kirim">
+            <i class="fa-solid fa-paper-plane"></i>
+          </button>
+        </div>
+        <div class="composer-hint">
+          <span>Enter untuk kirim &middot; Shift+Enter untuk baris baru</span>
+          <span class="dot">&middot;</span>
+          <span>Tarik & lepas file ke mana saja</span>
+        </div>
       </form>
-      <div class="composer-hint">
-        <span id="composerHint">Tekan Enter untuk mengirim</span>
-      </div>
     </main>
 
     <div class="backdrop" id="backdrop"></div>
   </div>
 
-  <!-- Image URL modal -->
-  <div class="modal" id="imageModal" hidden>
-    <div class="modal-card">
-      <div class="modal-head">
-        <h3>Tambah Gambar (Vision)</h3>
-        <button class="icon-btn" id="imageModalClose" aria-label="Tutup">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-      <div class="modal-body">
-        <p class="hint">Masukkan URL gambar publik (jpg/png). Hanya tersedia untuk model multimodal.</p>
-        <input type="url" id="imageUrlInput" placeholder="https://example.com/image.jpg" />
-        <div class="modal-actions">
-          <button type="button" class="btn btn-ghost" id="imageCancelBtn">Batal</button>
-          <button type="button" class="btn btn-primary" id="imageOkBtn">Gunakan</button>
-        </div>
-      </div>
+  <!-- Drop overlay -->
+  <div class="drop-overlay" id="dropOverlay" hidden>
+    <div class="drop-card">
+      <div class="drop-icon"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+      <h3>Lepaskan untuk melampirkan</h3>
+      <p>Gambar, dokumen, kode — apapun bisa dianalisa</p>
     </div>
   </div>
 
@@ -160,6 +204,9 @@
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/css.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/xml.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/yaml.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/markdown.min.js"></script>
 
   <script src="app.js"></script>
 </body>
