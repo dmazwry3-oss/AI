@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0b0f1a" />
+  <meta name="description" content="LexAI - Web AI gratis dengan banyak model: Gemini, Claude, GPT-4o, Perplexity. Powered by LexCode API." />
+  <title>LexAI &middot; Multi-Model AI Chat</title>
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <span class="brand-icon"><i class="fa-solid fa-bolt"></i></span>
+          <div>
+            <div class="brand-name">LexAI</div>
+            <div class="brand-sub">Multi-Model AI</div>
+          </div>
+        </div>
+        <button class="icon-btn sidebar-close" id="sidebarClose" aria-label="Tutup sidebar">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <button class="new-chat-btn" id="newChatBtn">
+        <i class="fa-solid fa-plus"></i>
+        <span>Chat Baru</span>
+      </button>
+
+      <div class="sidebar-section">
+        <div class="section-title">Pilih Model</div>
+        <div class="model-list" id="modelList"></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <a href="https://api.lexcode.biz.id/docs/" target="_blank" rel="noopener" class="footer-link">
+          <i class="fa-solid fa-book"></i>
+          <span>Dokumentasi API</span>
+        </a>
+        <div class="credits">
+          Powered by <a href="https://api.lexcode.biz.id" target="_blank" rel="noopener">LexCode API</a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn" id="sidebarToggle" aria-label="Buka sidebar">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+        <div class="topbar-title">
+          <span id="currentModelName">Gemini 2.5 Flash</span>
+          <span class="model-badge" id="currentModelBadge">multimodal</span>
+        </div>
+        <button class="icon-btn" id="clearBtn" title="Hapus chat" aria-label="Hapus chat">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </header>
+
+      <section class="chat" id="chat">
+        <div class="welcome" id="welcome">
+          <div class="welcome-logo"><i class="fa-solid fa-bolt"></i></div>
+          <h1>Selamat datang di <span class="grad">LexAI</span></h1>
+          <p>Asisten AI gratis dengan banyak model. Pilih model di sidebar lalu mulai mengobrol.</p>
+          <div class="prompt-suggestions" id="promptSuggestions">
+            <button class="suggest" data-prompt="Jelaskan konsep machine learning dengan analogi sederhana">
+              <i class="fa-solid fa-lightbulb"></i>
+              <span>Jelaskan machine learning</span>
+            </button>
+            <button class="suggest" data-prompt="Tuliskan fungsi JavaScript untuk mengurutkan array bilangan secara ascending">
+              <i class="fa-solid fa-code"></i>
+              <span>Sort array di JavaScript</span>
+            </button>
+            <button class="suggest" data-prompt="Buatkan rencana belajar Python untuk pemula selama 30 hari">
+              <i class="fa-solid fa-graduation-cap"></i>
+              <span>Rencana belajar Python</span>
+            </button>
+            <button class="suggest" data-prompt="Apa berita teknologi terbaru hari ini?">
+              <i class="fa-solid fa-newspaper"></i>
+              <span>Berita teknologi terbaru</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Image preview when vision mode -->
+      <div class="image-preview" id="imagePreview" hidden>
+        <img id="imagePreviewImg" alt="Preview gambar" />
+        <button class="icon-btn" id="removeImageBtn" aria-label="Hapus gambar">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form class="composer" id="composer" autocomplete="off">
+        <button type="button" class="icon-btn composer-btn" id="addImageBtn" title="Tambahkan URL gambar (vision)" aria-label="Tambah gambar">
+          <i class="fa-regular fa-image"></i>
+        </button>
+        <textarea
+          id="input"
+          rows="1"
+          placeholder="Tulis pesanmu di sini... (Shift+Enter untuk baris baru)"
+          aria-label="Pesan"
+        ></textarea>
+        <button type="submit" class="send-btn" id="sendBtn" aria-label="Kirim">
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+      </form>
+      <div class="composer-hint">
+        <span id="composerHint">Tekan Enter untuk mengirim</span>
+      </div>
+    </main>
+
+    <div class="backdrop" id="backdrop"></div>
+  </div>
+
+  <!-- Image URL modal -->
+  <div class="modal" id="imageModal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>Tambah Gambar (Vision)</h3>
+        <button class="icon-btn" id="imageModalClose" aria-label="Tutup">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="hint">Masukkan URL gambar publik (jpg/png). Hanya tersedia untuk model multimodal.</p>
+        <input type="url" id="imageUrlInput" placeholder="https://example.com/image.jpg" />
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="imageCancelBtn">Batal</button>
+          <button type="button" class="btn btn-primary" id="imageOkBtn">Gunakan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" hidden></div>
+
+  <!-- Libs -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/typescript.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/css.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/xml.min.js"></script>
+
+  <script src="app.js"></script>
+</body>
+</html>
